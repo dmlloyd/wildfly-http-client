@@ -18,15 +18,11 @@
 
 package org.wildfly.httpclient.naming;
 
-import java.net.URI;
-import java.util.ArrayList;
-import java.util.List;
-
 import javax.naming.NamingException;
 
 import org.wildfly.naming.client.NamingProvider;
-import org.wildfly.naming.client.NamingProvider.Location;
 import org.wildfly.naming.client.NamingProviderFactory;
+import org.wildfly.naming.client.ProviderEnvironment;
 import org.wildfly.naming.client.util.FastHashtable;
 
 /**
@@ -50,15 +46,11 @@ public class HttpNamingProviderFactory implements NamingProviderFactory {
     }
 
     @Override
-    public NamingProvider createProvider(FastHashtable<String, Object> env, URI... providerUris) throws NamingException {
-        if (providerUris.length == 0) {
+    public NamingProvider createProvider(final FastHashtable<String, Object> env, final ProviderEnvironment providerEnvironment) throws NamingException {
+        if (providerEnvironment.getProviderUris().size() == 0) {
             throw HttpNamingClientMessages.MESSAGES.atLeastOneUri();
         }
-        List<Location> locationList = new ArrayList<>();
-        for (URI uri : providerUris) {
-            locationList.add(Location.of(uri));
-        }
         // TODO: examine env for security information to override invocation-time lookup
-        return new HttpNamingProvider(locationList, env);
+        return new HttpNamingProvider(providerEnvironment);
     }
 }

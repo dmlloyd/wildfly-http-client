@@ -30,13 +30,14 @@ import java.security.PrivilegedAction;
 import java.util.Locale;
 import java.util.Map;
 import javax.security.auth.callback.Callback;
+import javax.security.auth.callback.CallbackHandler;
+import javax.security.auth.callback.NameCallback;
 import javax.security.auth.callback.PasswordCallback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 
 import org.wildfly.security.auth.client.AuthenticationConfiguration;
 import org.wildfly.security.auth.client.AuthenticationContext;
 import org.wildfly.security.auth.client.AuthenticationContextConfigurationClient;
-import org.wildfly.security.auth.principal.AnonymousPrincipal;
 import io.undertow.client.ClientRequest;
 import io.undertow.client.ClientResponse;
 import io.undertow.security.impl.DigestWWWAuthenticateToken;
@@ -46,6 +47,7 @@ import io.undertow.util.HeaderValues;
 import io.undertow.util.Headers;
 import io.undertow.util.HexConverter;
 import io.undertow.util.StatusCodes;
+import org.wildfly.security.auth.principal.NamePrincipal;
 
 /**
  * Class that holds authentication information for a connection
@@ -126,21 +128,25 @@ class PoolAuthenticationContext {
             config = AUTH_CONTEXT_CLIENT.getAuthenticationConfiguration(uri, AuthenticationContext.captureCurrent());
         }
 
+        final CallbackHandler callbackHandler = AUTH_CONTEXT_CLIENT.getCallbackHandler(config);
 
-        Principal principal = AUTH_CONTEXT_CLIENT.getPrincipal(config);
-        if (principal instanceof AnonymousPrincipal) {
-            return false;
-        }
-        PasswordCallback callback = new PasswordCallback("password", false);
+        // TODO: also try credential callback, passing in DIGEST parameters (if any) when DIGEST is in use
+        NameCallback nameCallback = new NameCallback("user name");
+        PasswordCallback passwordCallback = new PasswordCallback("password", false);
         try {
-            AUTH_CONTEXT_CLIENT.getCallbackHandler(config).handle(new Callback[]{callback});
+            callbackHandler.handle(new Callback[] { nameCallback, passwordCallback });
         } catch (IOException | UnsupportedCallbackException e) {
             return false;
         }
-        char[] password = callback.getPassword();
+        final String name = nameCallback.getName();
+        if (name == null) {
+            return false;
+        }
+        char[] password = passwordCallback.getPassword();
         if (password == null) {
             return false;
         }
+        Principal principal = new NamePrincipal(name);
         if (current == Type.BASIC) {
             String challenge = principal.getName() + ":" + new String(password);
             request.getRequestHeaders().put(Headers.AUTHORIZATION, "Basic " + FlexBase64.encodeString(challenge.getBytes(StandardCharsets.UTF_8), false));

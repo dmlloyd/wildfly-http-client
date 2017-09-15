@@ -26,6 +26,7 @@ import java.io.ObjectInput;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
 import java.net.URI;
+import java.security.GeneralSecurityException;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
@@ -151,17 +152,11 @@ class HttpEJBReceiver extends EJBReceiver {
         if (compressRequest) {
             request.getRequestHeaders().put(Headers.CONTENT_ENCODING, Headers.GZIP.toString());
         }
-        SSLContext sslContext = receiverContext.getSSLContext();
-        AuthenticationConfiguration authenticationConfiguration = receiverContext.getAuthenticationConfiguration();
-        if (sslContext == null || authenticationConfiguration == null) {
-            final AuthenticationContext context = AuthenticationContext.captureCurrent();
-            if (sslContext == null) {
-                sslContext = CLIENT.getSSLContext(uri, context);
-            }
-            if (authenticationConfiguration == null) {
-                authenticationConfiguration = CLIENT.getAuthenticationConfiguration(uri, context);
-            }
-        }
+        final AuthenticationContext context = receiverContext.getAuthenticationContext();
+        final AuthenticationContextConfigurationClient client = CLIENT;
+        final int defaultPort = uri.getScheme().equals("https") ? 443 : 80;
+        final AuthenticationConfiguration authenticationConfiguration = client.getAuthenticationConfiguration(uri, context, defaultPort, "jndi", "jboss");
+        final SSLContext sslContext = client.getSSLContext(uri, context, "jndi", "jboss");
         targetContext.sendRequest(request, sslContext, authenticationConfiguration, (output -> {
                     OutputStream data = output;
                     if (compressRequest) {
@@ -216,17 +211,11 @@ class HttpEJBReceiver extends EJBReceiver {
     protected SessionID createSession(final EJBReceiverSessionCreationContext receiverContext) throws Exception {
         final EJBLocator<?> locator = receiverContext.getClientInvocationContext().getLocator();
         URI uri = receiverContext.getClientInvocationContext().getDestination();
-        SSLContext sslContext = receiverContext.getSSLContext();
-        AuthenticationConfiguration authenticationConfiguration = receiverContext.getAuthenticationConfiguration();
-        if (sslContext == null || authenticationConfiguration == null) {
-            final AuthenticationContext context = AuthenticationContext.captureCurrent();
-            if (sslContext == null) {
-                sslContext = CLIENT.getSSLContext(uri, context);
-            }
-            if (authenticationConfiguration == null) {
-                authenticationConfiguration = CLIENT.getAuthenticationConfiguration(uri, context);
-            }
-        }
+        final AuthenticationContext context = receiverContext.getAuthenticationContext();
+        final AuthenticationContextConfigurationClient client = CLIENT;
+        final int defaultPort = uri.getScheme().equals("https") ? 443 : 80;
+        final AuthenticationConfiguration authenticationConfiguration = client.getAuthenticationConfiguration(uri, context, defaultPort, "jndi", "jboss");
+        final SSLContext sslContext = client.getSSLContext(uri, context, "jndi", "jboss");
         WildflyHttpContext current = WildflyHttpContext.getCurrent();
         HttpTargetContext targetContext = current.getTargetContext(uri);
         if (targetContext == null) {
@@ -280,6 +269,17 @@ class HttpEJBReceiver extends EJBReceiver {
 
         Affinity affinity = locator.getAffinity();
         URI uri = clientInvocationContext.getDestination();
+        final AuthenticationContext context = receiverContext.getAuthenticationContext();
+        final AuthenticationContextConfigurationClient client = CLIENT;
+        final int defaultPort = uri.getScheme().equals("https") ? 443 : 80;
+        final AuthenticationConfiguration authenticationConfiguration = client.getAuthenticationConfiguration(uri, context, defaultPort, "jndi", "jboss");
+        final SSLContext sslContext;
+        try {
+            sslContext = client.getSSLContext(uri, context, "jndi", "jboss");
+        } catch (GeneralSecurityException e) {
+            // ¯\_(ツ)_/¯
+            return false;
+        }
         WildflyHttpContext current = WildflyHttpContext.getCurrent();
         HttpTargetContext targetContext = current.getTargetContext(uri);
         if (targetContext == null) {
@@ -302,7 +302,7 @@ class HttpEJBReceiver extends EJBReceiver {
                 .setInvocationId(receiverContext.getClientInvocationContext().getAttachment(INVOCATION_ID))
                 .setBeanName(locator.getBeanName());
         final CompletableFuture<Boolean> result = new CompletableFuture<>();
-        targetContext.sendRequest(builder.createRequest(targetContext.getUri().getPath()), receiverContext.getSSLContext(), receiverContext.getAuthenticationConfiguration(), null, (stream, response) -> {
+        targetContext.sendRequest(builder.createRequest(targetContext.getUri().getPath()), sslContext, authenticationConfiguration, null, (stream, response) -> {
             result.complete(true);
             IoUtils.safeClose(stream);
         }, throwable -> result.complete(false), null, null);
@@ -360,7 +360,9 @@ class HttpEJBReceiver extends EJBReceiver {
             dataOutput.writeByte(0);
             return null;
         } else if (transaction instanceof RemoteTransaction) {
-            final XidProvider ir = ((RemoteTransaction) transaction).getProviderInterface(XidProvider.class);
+            final RemoteTransaction remoteTransaction = (RemoteTransaction) transaction;
+            remoteTransaction.setLocation(uri);
+            final XidProvider ir = remoteTransaction.getProviderInterface(XidProvider.class);
             if (ir == null) throw EjbHttpClientMessages.MESSAGES.cannotEnlistTx();
             Xid xid = ir.getXid();
             dataOutput.writeByte(1);

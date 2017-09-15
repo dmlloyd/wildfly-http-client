@@ -18,12 +18,12 @@
 
 package org.wildfly.httpclient.naming;
 
-import java.util.List;
+import java.net.URI;
 
 import javax.naming.NamingException;
 
 import org.wildfly.naming.client.NamingProvider;
-import org.wildfly.naming.client.util.FastHashtable;
+import org.wildfly.naming.client.ProviderEnvironment;
 import org.wildfly.security.auth.client.PeerIdentity;
 
 /**
@@ -31,19 +31,17 @@ import org.wildfly.security.auth.client.PeerIdentity;
  */
 public class HttpNamingProvider implements NamingProvider {
 
-    private final List<Location> locationList;
-    private final FastHashtable<String, Object> env;
+    private final ProviderEnvironment providerEnvironment;
 
-    HttpNamingProvider(final List<Location> locationList, final FastHashtable<String, Object> env) {
-        this.locationList = locationList;
-        this.env = env;
+    HttpNamingProvider(final ProviderEnvironment providerEnvironment) {
+        this.providerEnvironment = providerEnvironment;
     }
 
-    public List<Location> getLocations() {
-        return locationList;
+    public ProviderEnvironment getProviderEnvironment() {
+        return providerEnvironment;
     }
 
-    public PeerIdentity getPeerIdentityForNaming(final Location location) throws NamingException {
+    public PeerIdentity getPeerIdentityForNaming(final URI location) throws NamingException {
         return null;
     }
 }
